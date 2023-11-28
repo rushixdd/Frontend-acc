@@ -4,6 +4,7 @@ const path = require('path');
 
 const port = 3000;
 let server;
+const clients = []; // Move clients array to the top-level scope
 
 function startServer() {
   server = http.createServer((req, res) => {
@@ -54,13 +55,22 @@ function startServer() {
 }
 
 function watchFiles() {
+  const clients = []; // Move clients array here
+
   const watcher = fs.watch('.', { recursive: true }, (event, filename) => {
     console.log(`File changed: ${filename}`);
-    restartServer();
+    notifyClients(clients);
   });
 
   watcher.on('error', (error) => {
     console.error(`Watcher error: ${error}`);
+  });
+}
+
+function notifyClients(clients) {
+  console.log('Notifying clients to refresh...');
+  clients.forEach((res) => {
+    res.write('data: update\n\n'); // Send a simple update message
   });
 }
 
@@ -77,3 +87,23 @@ startServer();
 
 // Watch files for changes
 watchFiles();
+
+// Create a simple HTTP endpoint for clients to connect and receive updates
+http.createServer((req, res) => {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+  });
+
+  // Store the response object to send updates
+  clients.push(res);
+
+  // Send a comment to keep the connection open
+  res.write(':ok\n\n');
+
+  // Clean up the response object when the connection is closed
+  req.on('close', () => {
+    clients.splice(clients.indexOf(res), 1); // Remove closed connection
+  });
+}).listen(3001); // Use a different port for the update server
